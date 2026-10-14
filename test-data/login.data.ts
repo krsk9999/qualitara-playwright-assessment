@@ -1,3 +1,5 @@
+import { requireEnv } from './env';
+
 export type LoginOutcome = 'success' | 'failure';
 
 export type LoginCase = {
@@ -10,10 +12,14 @@ export type LoginCase = {
   readonly flashMessage: string;
 };
 
-const VALID_USERNAME = 'tomsmith';
-const VALID_PASSWORD = 'SuperSecretPassword!';
+// Credential values come from the environment (.env locally, repository secrets in CI);
+// the expected behaviour for each combination stays here, under version control.
+const VALID_USERNAME = requireEnv('LOGIN_USERNAME');
+const VALID_PASSWORD = requireEnv('LOGIN_PASSWORD');
+const INVALID_USERNAME = requireEnv('LOGIN_INVALID_USERNAME');
+const INVALID_PASSWORD = requireEnv('LOGIN_INVALID_PASSWORD');
 
-export const loginCases = [
+export const loginCases: readonly LoginCase[] = [
   {
     title: 'valid credentials open the secure area',
     username: VALID_USERNAME,
@@ -23,7 +29,7 @@ export const loginCases = [
   },
   {
     title: 'unknown username with a valid password is rejected',
-    username: 'invalidUser',
+    username: INVALID_USERNAME,
     password: VALID_PASSWORD,
     expected: 'failure',
     flashMessage: 'Your username is invalid!',
@@ -31,8 +37,8 @@ export const loginCases = [
   {
     title: 'valid username with a wrong password is rejected',
     username: VALID_USERNAME,
-    password: 'WrongPassword!',
+    password: INVALID_PASSWORD,
     expected: 'failure',
     flashMessage: 'Your password is invalid!',
   },
-] as const satisfies readonly LoginCase[];
+];

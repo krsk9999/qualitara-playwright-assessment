@@ -76,6 +76,11 @@ jobs:
       # CI=true); the flag makes the limit explicit at the pipeline level too.
       - name: Run Playwright tests
         run: npx playwright test --workers=3
+        env:
+          LOGIN_USERNAME: ${{ secrets.LOGIN_USERNAME }}
+          LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
+          LOGIN_INVALID_USERNAME: ${{ secrets.LOGIN_INVALID_USERNAME }}
+          LOGIN_INVALID_PASSWORD: ${{ secrets.LOGIN_INVALID_PASSWORD }}
 
       - name: Upload HTML report
         if: failure()

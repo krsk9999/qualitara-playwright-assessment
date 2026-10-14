@@ -1,4 +1,8 @@
+import { existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
+
+// Local runs read .env; CI provides the same variables from repository secrets.
+if (existsSync('.env')) process.loadEnvFile('.env');
 
 const isCI = !!process.env.CI;
 
