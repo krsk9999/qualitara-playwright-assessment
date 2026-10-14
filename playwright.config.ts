@@ -20,7 +20,13 @@ export default defineConfig({
   // Challenge requirement: never run more than 3 workers in CI.
   workers: isCI ? 3 : undefined,
   reporter: isCI
-    ? [['github'], ['html', { open: 'never' }], ['list']]
+    ? [
+        ['github'],
+        ['html', { open: 'never' }],
+        ['list'],
+        // Machine-readable results, turned into the job summary table by scripts/ci-summary.mts.
+        ['json', { outputFile: 'playwright-results.json' }],
+      ]
     : [['html', { open: 'never' }], ['list']],
   use: {
     baseURL: process.env.BASE_URL ?? 'https://the-internet.herokuapp.com',

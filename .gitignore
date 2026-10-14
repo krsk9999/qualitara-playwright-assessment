@@ -8,3 +8,4 @@ playwright/.cache/
 .env*
 !.env.example
 .idea/
+playwright-results.json

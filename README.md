@@ -34,7 +34,7 @@ run fails.
 
 ```text
 .
-├── .github/workflows/tests.yml     # CI: push / PR / manual, ≤3 workers, caches, failure artifacts
+├── .github/workflows/tests.yml     # CI: push / PR / manual, ≤3 workers, caches, artifacts, summary
 ├── .claude/agents/                 # AI agent definition used during implementation (see "How AI was used")
 ├── ai-sessions/                    # Exported AI conversation logs
 ├── pages/                          # Page objects: locators + actions only, no assertions
@@ -49,6 +49,7 @@ run fails.
 │   ├── login.spec.ts
 │   ├── dynamic-loading.spec.ts
 │   └── checkboxes.spec.ts
+├── scripts/ci-summary.mts          # Turns the JSON report into the CI job summary table
 ├── .env.example                    # Template for the local .env (committed)
 ├── playwright.config.ts
 ├── tsconfig.json
@@ -205,7 +206,7 @@ The workflow is [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
 ```text
 checkout → setup Node (.nvmrc) → restore node_modules cache → npm ci (on cache miss only)
 → restore Playwright browser cache → install browser (on miss) / OS deps (on hit)
-→ typecheck → playwright test --workers=3 → upload report + traces (on failure)
+→ typecheck → playwright test --workers=3 → upload report + traces → write execution summary
 ```
 
 **Parallelism:**
@@ -228,10 +229,28 @@ checkout → setup Node (.nvmrc) → restore node_modules cache → npm ci (on c
 `setup-node`'s own npm download cache is turned off. Caching `node_modules` directly is what the
 challenge asks for, and stacking both caches would be redundant.
 
-**Artifacts (uploaded only when the job fails, kept 14 days):**
+**Artifacts (kept 14 days, listed under *Artifacts* on the run's summary page):**
 
-- `playwright-report`: the HTML report
-- `playwright-traces`: the `test-results/` folder with traces, failure screenshots and videos
+| Artifact | When it is uploaded | Contents |
+|---|---|---|
+| `playwright-report` | Every completed run, **including failures** | The HTML report (download, unzip, open `index.html` or run `npx playwright show-report <folder>`) |
+| `playwright-traces` | Whenever any attempt failed: on failed runs, and on green runs that had a flaky test | `test-results/`: a trace, screenshot and video per failed attempt |
+
+The brief asks for both on failure. Uploading the report on every run as well means each run's
+summary page links its report, and keeping traces for flaky tests means a retry that passed can
+still be investigated.
+
+**Execution summary:** in CI, Playwright also writes a JSON report. The final step,
+[`scripts/ci-summary.mts`](scripts/ci-summary.mts), turns it into a table on the run's summary page.
+It shows:
+- the overall result
+- totals for passed, flaky, failed and skipped tests, plus duration and worker count
+- one row per test, with its status, spec, attempts and duration
+- direct links to both artifacts
+
+The script runs directly on Node 24, which strips TypeScript types natively, so no build step or extra
+dependency is needed. If the run stops before tests execute (for example a type error), the summary
+says so.
 
 **Secrets:** `LOGIN_USERNAME`, `LOGIN_PASSWORD`, `LOGIN_INVALID_USERNAME` and `LOGIN_INVALID_PASSWORD`
 are repository secrets, passed to the test step as environment variables.
