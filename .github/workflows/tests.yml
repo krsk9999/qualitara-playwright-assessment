@@ -1,0 +1,96 @@
+name: Playwright Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# One run per workflow + ref. Superseded runs are cancelled everywhere except main,
+# where every commit keeps its own result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Single job, no browser/shard matrix: matrix jobs run in parallel and each one
+    # starts its own Playwright workers, so N jobs x 3 workers would break the
+    # "no more than 3 in parallel" limit. One job keeps total concurrency at <= 3.
+    # Runner image is pinned (not -latest) so cache keys stay stable.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # npm cache is disabled on purpose: node_modules is cached directly below.
+      - name: Setup Node.js
+        id: setup-node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      # No restore-keys: a partial match would restore a stale tree and skip npm ci.
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node${{ steps.setup-node.outputs.node-version }}-${{ hashFiles('package-lock.json') }}
+
+      # npm ci always deletes node_modules first, so running it after a cache hit
+      # would throw the restored tree away. Only install on a miss.
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers and OS dependencies
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # The cache holds browser binaries only; system libraries still need installing.
+      - name: Install Playwright OS dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # playwright.config.ts already caps workers at 3 when CI is set (Actions sets
+      # CI=true); the flag makes the limit explicit at the pipeline level too.
+      - name: Run Playwright tests
+        run: npx playwright test --workers=3
+
+      - name: Upload HTML report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      # test-results/ holds traces and screenshots for failed tests.
+      - name: Upload traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: ignore
