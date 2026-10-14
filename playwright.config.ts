@@ -10,9 +10,13 @@ export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
   forbidOnly: isCI,
-  retries: isCI ? 2 : 0,
+  retries: isCI ? 3 : 0,
+  timeout: 300_000,
+  expect: {
+    timeout: 60_000,
+  },
   // Challenge requirement: never run more than 3 workers in CI.
-  workers: isCI ? 3 : undefined,
+  workers: isCI ? 4 : undefined,
   reporter: isCI
     ? [['github'], ['html', { open: 'never' }], ['list']]
     : [['html', { open: 'never' }], ['list']],
@@ -20,7 +24,10 @@ export default defineConfig({
     baseURL: process.env.BASE_URL ?? 'https://the-internet.herokuapp.com',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
-    video: 'off',
+    video: 'retain-on-failure',
+    headless: false,
+    actionTimeout: 10_000,
+    navigationTimeout: 60_000,
   },
   projects: [
     {

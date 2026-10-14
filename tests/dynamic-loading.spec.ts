@@ -35,7 +35,7 @@ test.describe('Dynamic loading: hidden element', () => {
     });
 
     await test.step('Verify the finish text is revealed', async () => {
-      await expect(dynamicLoadingPage.$finishText).toBeVisible({ timeout: FINISH_TIMEOUT_MS });
+      await expect(dynamicLoadingPage.$finishText).toBeVisible();
       await expect(dynamicLoadingPage.$finishText).toHaveText('Hello World!');
       await expect(dynamicLoadingPage.$loadingIndicator).toBeHidden();
     });
