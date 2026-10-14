@@ -11,8 +11,14 @@ test.describe('Dynamic loading: hidden element', () => {
   test('reveals "Hello World!" after loading completes', async ({ page }) => {
     const dynamicLoadingPage = new DynamicLoadingPage(page);
 
-    await test.step('Open the page', async () => {
+    await test.step('Open the dynamic loading index page', async () => {
       await dynamicLoadingPage.goto();
+    });
+
+    await test.step('Open "Example 1: Element on page that is hidden"', async () => {
+      await expect(dynamicLoadingPage.$example1Link).toBeVisible();
+      await dynamicLoadingPage.openExample1();
+      await expect(page).toHaveURL('/dynamic_loading/1');
     });
 
     await test.step('Verify the initial state', async () => {
