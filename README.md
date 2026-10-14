@@ -3,9 +3,17 @@
 [![Playwright Tests](https://github.com/krsk9999/qualitara-playwright-assessment/actions/workflows/tests.yml/badge.svg)](https://github.com/krsk9999/qualitara-playwright-assessment/actions/workflows/tests.yml)
 
 End-to-end test suite in **Playwright + TypeScript** for the public demo app
-[the-internet.herokuapp.com](https://the-internet.herokuapp.com). It has a GitHub Actions pipeline that
-caches dependencies and browsers, caps parallelism at 3 workers, and uploads reports and traces when a
-run fails.
+[the-internet.herokuapp.com](https://the-internet.herokuapp.com). It has a GitHub Actions pipeline that:
+- caches `node_modules` and the Playwright browsers
+- caps parallelism at 3 workers
+- uploads the HTML report and failure traces as artifacts
+- writes an execution summary table on every run's page
+
+| | |
+|---|---|
+| **Stack** | Playwright Test 1.64 · TypeScript 7 (strict) · Node.js 24 · Chromium |
+| **Tests** | 6 tests in 3 specs (3 login cases, 1 dynamic loading, 2 checkbox) |
+| **CI** | GitHub Actions on push, pull request and manual dispatch ([runs](https://github.com/krsk9999/qualitara-playwright-assessment/actions/workflows/tests.yml)) |
 
 | Scenario | Page | What is verified |
 |---|---|---|
@@ -13,20 +21,25 @@ run fails.
 | Dynamic content | `/dynamic_loading` → `/dynamic_loading/1` | Opening "Example 1" from the index page leads to `/dynamic_loading/1`. There, the hidden `Hello World!` element becomes **visible** after clicking Start. It is already in the DOM (but hidden) from the start. |
 | Form inputs | `/checkboxes` | Initial state, `check()`/`uncheck()`, and `click()` toggling in both directions. |
 
+> **For reviewers:** the three sections the brief asks for are
+> [How to run the tests locally](#how-to-run-the-tests-locally),
+> [Design decisions and trade-offs](#design-decisions-and-trade-offs) and
+> [How I used AI tools during the project](#how-i-used-ai-tools-during-the-project).
+
 ---
 
 ## Contents
 
 - [Project structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Initialization](#initialization)
+- [How to run the tests locally](#how-to-run-the-tests-locally)
 - [Configuration](#configuration)
-- [Running the tests](#running-the-tests)
 - [Reports, screenshots and traces](#reports-screenshots-and-traces)
 - [Continuous integration](#continuous-integration)
+- [CI verification](#ci-verification)
 - [Design decisions and trade-offs](#design-decisions-and-trade-offs)
 - [Known issue: demo host instability](#known-issue-demo-host-instability)
-- [How AI was used](#how-ai-was-used)
+- [Troubleshooting](#troubleshooting)
+- [How I used AI tools during the project](#how-i-used-ai-tools-during-the-project)
 
 ---
 
@@ -35,8 +48,9 @@ run fails.
 ```text
 .
 ├── .github/workflows/tests.yml     # CI: push / PR / manual, ≤3 workers, caches, artifacts, summary
-├── .claude/agents/                 # AI agent definition used during implementation (see "How AI was used")
-├── ai-sessions/                    # Exported AI conversation logs
+├── .claude/agents/                 # AI agent definition used during implementation (see "How I used AI tools")
+├── ai-sessions/                    # Exported AI conversation logs (redacted, see "How AI was used")
+│   └── claude-playwright-structure.md
 ├── pages/                          # Page objects: locators + actions only, no assertions
 │   ├── login.page.ts
 │   ├── secure-area.page.ts
@@ -49,16 +63,21 @@ run fails.
 │   ├── login.spec.ts
 │   ├── dynamic-loading.spec.ts
 │   └── checkboxes.spec.ts
-├── scripts/ci-summary.mts          # Turns the JSON report into the CI job summary table
-├── .env.example                    # Template for the local .env (committed)
+├── scripts/
+│   └── ci-summary.mts              # Turns the JSON report into the CI job summary table
+├── .env.example                    # Template for the local .env (committed; .env itself is gitignored)
+├── .nvmrc                          # Node.js major version used locally and in CI
 ├── playwright.config.ts
 ├── tsconfig.json
-└── package.json
+├── package.json
+└── package-lock.json               # Committed; CI installs with npm ci
 ```
 
 ---
 
-## Prerequisites
+## How to run the tests locally
+
+### 1. Prerequisites
 
 - **Node.js 24** (LTS). The exact major is pinned in [`.nvmrc`](.nvmrc), so `nvm use` picks it up.
 - **npm** (comes with Node).
@@ -66,9 +85,7 @@ run fails.
 
 The Chromium browser is installed by Playwright during initialization. No global installs are needed.
 
----
-
-## Initialization
+### 2. Install and configure
 
 ```bash
 git clone https://github.com/krsk9999/qualitara-playwright-assessment.git
@@ -81,7 +98,31 @@ npx playwright install chromium # download the browser (add --with-deps on a fre
 cp .env.example .env            # create your local environment file
 ```
 
-You can now run `npm test`.
+Full setup in one go, then run:
+
+```bash
+npm ci && npx playwright install chromium && cp .env.example .env && npm test
+```
+
+### 3. Run the tests
+
+| Command | What it does |
+|---|---|
+| `npm test` | Run the full suite headless (6 tests) |
+| `npx playwright test tests/login.spec.ts` | Run one spec file |
+| `npx playwright test -g "wrong password"` | Run tests whose title matches a pattern |
+| `npm run test:headed` | Run with a visible browser window |
+| `npm run test:ui` | Open Playwright UI mode (watch, time-travel, pick tests) |
+| `npx playwright test --debug` | Step through with the Playwright Inspector |
+| `npx playwright test --list` | List discovered tests without running them |
+| `npx playwright test --repeat-each=5` | Stability check: run every test 5 times |
+| `npx playwright test --workers=3` | Run with the same parallelism as CI |
+| `CI=1 npx playwright test` | Run with the CI settings (retries, reporters, worker cap) |
+| `npm run typecheck` | Type-check the project (`tsc --noEmit`) |
+| `npm run report` | Open the HTML report of the last run |
+
+Results and failure evidence are described in [Reports, screenshots and traces](#reports-screenshots-and-traces).
+For environment variables and settings, see [Configuration](#configuration).
 
 ---
 
@@ -120,7 +161,7 @@ Error: Missing environment variable LOGIN_USERNAME. Copy .env.example to .env an
 | `workers` | `3` in CI, Playwright default locally | Challenge limit: no more than 3 parallel workers in CI |
 | `retries` | `3` in CI, `0` locally | Local failures show up immediately. CI absorbs transient host failures and records them as *flaky* |
 | `forbidOnly` | `true` in CI | A forgotten `test.only` can't silently shrink the CI run |
-| `reporter` | `github` + `html` + `list` in CI, `html` + `list` locally | Inline annotations on PRs, plus a full HTML report |
+| `reporter` | `github` + `html` + `list` + `json` in CI, `html` + `list` locally | Inline annotations on PRs, a full HTML report, and JSON results for the CI summary table |
 | `use.baseURL` | `BASE_URL` or the public demo | Specs navigate with relative paths (`/login`) |
 | `use.screenshot` | `only-on-failure` | **Required:** automatic screenshot when a test fails |
 | `use.trace` | `retain-on-failure` | A full trace (DOM snapshots, network, console) is kept for failed tests |
@@ -149,24 +190,6 @@ become runtime failures.
 
 ---
 
-## Running the tests
-
-| Command | What it does |
-|---|---|
-| `npm test` | Run the full suite headless (6 tests) |
-| `npx playwright test tests/login.spec.ts` | Run one spec file |
-| `npx playwright test -g "wrong password"` | Run tests whose title matches a pattern |
-| `npm run test:headed` | Run with a visible browser window |
-| `npm run test:ui` | Open Playwright UI mode (watch, time-travel, pick tests) |
-| `npx playwright test --debug` | Step through with the Playwright Inspector |
-| `npx playwright test --list` | List discovered tests without running them |
-| `npx playwright test --repeat-each=5` | Stability check: run every test 5 times |
-| `npx playwright test --workers=3` | Run with the same parallelism as CI |
-| `CI=1 npx playwright test` | Run with the CI settings (retries, reporters, worker cap) |
-| `npm run typecheck` | Type-check the project (`tsc --noEmit`) |
-
----
-
 ## Reports, screenshots and traces
 
 After every run, the **HTML report** is written to `playwright-report/`:
@@ -175,10 +198,14 @@ After every run, the **HTML report** is written to `playwright-report/`:
 npm run report                  # = npx playwright show-report
 ```
 
-For each **failed** test, `test-results/<test-name>/` contains:
+For each **failed** attempt, `test-results/<test-name>/` contains:
 
 - `test-failed-1.png`: the automatic failure screenshot (also embedded in the HTML report)
 - `trace.zip`: the full Playwright trace
+- `video.webm`: a recording of the attempt
+
+Passing tests leave nothing behind (`only-on-failure` / `retain-on-failure`), so the folder only holds
+what's needed to debug a failure.
 
 Open a trace with:
 
@@ -190,8 +217,12 @@ You can also click the trace icon in the HTML report, or drop the zip on
 [trace.playwright.dev](https://trace.playwright.dev). In the trace viewer you can see every action,
 the DOM before and after each one, the network and the console.
 
-Retried attempts get their own `-retry1`/`-retry2` folders, so you can compare a failed attempt with
+Retried attempts get their own `-retry1` … `-retry3` folders, so you can compare a failed attempt with
 the one that passed.
+
+**From CI:** download the `playwright-report` and `playwright-traces` artifacts from the run page
+(they are linked in the run's execution summary), unzip them, then run
+`npx playwright show-report <report-folder>` or `npx playwright show-trace <trace.zip>`.
 
 ---
 
@@ -258,6 +289,24 @@ are repository secrets, passed to the test step as environment variables.
 **Other hardening:** `permissions: contents: read`, the runner image is pinned to `ubuntu-24.04` so
 cache keys stay stable, and the job has a 20-minute timeout.
 
+**Action versions:** `actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`,
+`actions/upload-artifact@v7`.
+
+---
+
+## CI verification
+
+Each run below was checked in its log, not just by its green tick. All runs were on `main`.
+
+| Run | Trigger | Result | `node_modules` cache | Browser cache | Notes |
+|---|---|---|---|---|---|
+| [38652156336](https://github.com/krsk9999/qualitara-playwright-assessment/actions/runs/38652156336) | push | ✅ 6 passed | miss, then saved | miss, then saved | First run; `npm ci` and the browser download ran once |
+| [38652403314](https://github.com/krsk9999/qualitara-playwright-assessment/actions/runs/38652403314) | manual | ✅ 5 passed, ⚠️ 1 flaky | **hit** (`npm ci` skipped) | **hit** (only OS deps installed) | The dynamic-loading test passed on retry (see [Known issue](#known-issue-demo-host-instability)) |
+| [38655416522](https://github.com/krsk9999/qualitara-playwright-assessment/actions/runs/38655416522) | push | ✅ 6 passed | hit | hit | |
+| [38655880735](https://github.com/krsk9999/qualitara-playwright-assessment/actions/runs/38655880735) | push | ✅ 6 passed | hit | hit | First run with the report artifact and the execution summary table |
+
+Typical job time is about 2 minutes, of which the tests take 1–1.5 minutes.
+
 ---
 
 ## Design decisions and trade-offs
@@ -320,6 +369,10 @@ The suite's reliability is limited by the target site, not the tests.
 - In one local stability run (every test 5 times, `--retries=2`), all 66 failed attempts traced back to
   stalled host requests. None were selector or assertion failures, and every test passed when the host
   responded.
+- In CI run [38652403314](https://github.com/krsk9999/qualitara-playwright-assessment/actions/runs/38652403314),
+  the "Example 1" link was not found on `/dynamic_loading` for 60s, then the retry passed. The page load
+  itself completed, so the most likely cause is the host serving an error page instead of the real
+  one. The same locator was found in every other run.
 
 **How it is handled:**
 - Navigation and assertion budgets are sized above the 30s stall (see
@@ -329,13 +382,39 @@ The suite's reliability is limited by the target site, not the tests.
   them.
 - No request blocking or browser flags are used. Tried experimentally, they only partly helped and
   would change what the browser actually loads.
+- Traces are kept for flaky tests as well (see [Continuous integration](#continuous-integration)), so a
+  stall absorbed by a retry can still be inspected.
+
+**Possible next steps:**
+- Check each navigation's HTTP status, so a host error page fails immediately with a clear message
+  ("/dynamic_loading returned 503") instead of as a missing element 60s later.
+- Size the 20-minute CI job timeout against the worst case. With a 300s per-test budget and 3
+  retries, a severe outage could reach it, and a job stopped by its timeout doesn't upload artifacts.
 
 ---
 
-## How AI was used
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `Missing environment variable LOGIN_USERNAME…` | No `.env` file, or it is incomplete. Run `cp .env.example .env`. |
+| `Executable doesn't exist at …/ms-playwright/…` | The browser isn't installed for this Playwright version. Run `npx playwright install chromium`. |
+| A test is slow or times out on `page.goto` or on an element that should be there | Usually the demo host stalling. Check the trace's *Network* tab for a request of about 30s or a 503, and re-run. |
+| `Error: No tests found` | The command was run outside the project root, or a path or `-g` filter matches nothing. |
+
+---
+
+## How I used AI tools during the project
 
 AI tools were used throughout, with every output reviewed and verified by a person before it was
-committed. The full conversation logs are in [`ai-sessions/`](ai-sessions/).
+committed. The full conversation log is in
+[`ai-sessions/claude-playwright-structure.md`](ai-sessions/claude-playwright-structure.md), exported
+with Claude Code's `/export`. It was redacted before committing:
+- employer and other-project names, other GitHub account names, expired login codes and local paths
+  are replaced with placeholders
+- a large diff that reproduced another project's internal rules is replaced with a note
+
+The redactions are listed at the top of the file. Nothing else was changed.
 
 **Tools:**
 - **Claude Code** (Anthropic, Claude Opus) was the orchestrating session. It reviewed the plan against
@@ -366,10 +445,18 @@ committed. The full conversation logs are in [`ai-sessions/`](ai-sessions/).
      stalls in the trace network logs) instead of being "fixed" with arbitrary waits.
    - An IDE folder (`.idea/`) that slipped into a commit was caught in review and removed before
      anything was pushed.
+   - Review went both ways. When I raised the timeouts in my own commit, the AI review flagged two
+     settings that would have broken CI before they were pushed: `headless: false` (runners have no
+     display) and 4 CI workers (breaks the 3-worker limit). Both were fixed in a follow-up commit.
+   - New behaviour was proven on CI rather than assumed. Cache hits were confirmed in the logs of a
+     second run, and the artifact upload and summary table in the run that introduced them.
 4. **Human decisions.** These choices were made by me, not the AI:
    - the light POM over no POM
    - credentials in `.env` and secrets
+   - starting the dynamic-loading test from the `/dynamic_loading` index, so it covers the link to
+     Example 1
    - handling the host stalls with larger timeouts and retries rather than request blocking
+   - uploading the report on every run and adding the execution summary table to the CI page
    - repository visibility and naming
 
 **Where AI helped most:** turning the plan into small, verifiable tasks, investigating live-page
@@ -379,5 +466,8 @@ network logs.
 **Where it needed steering:**
 - The original agent definition carried rules from another project that would have over-engineered
   this suite.
-- The agent's first instinct for the host problem was to propose client-side workarounds. The decision
-  was to measure in CI first and keep the config clean.
+- The agent's first instinct for the host problem was to propose client-side workarounds (disabling
+  HTTP/2, blocking assets). Those were measured and rejected. The decision was to measure in CI first,
+  then size the timeouts above the host's stall.
+- The AI can't see a page it can't reach. Two flaky failures were diagnosed from logs alone, and those
+  diagnoses are stated as "most likely" rather than as fact.
