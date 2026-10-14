@@ -10,7 +10,7 @@ run fails.
 | Scenario | Page | What is verified |
 |---|---|---|
 | Login (data-driven) | `/login` | One valid and two invalid credential sets from a single typed dataset. Checks the outcome, flash message and resulting page for each. |
-| Dynamic content | `/dynamic_loading/1` | The hidden `Hello World!` element becomes **visible** after clicking Start. It is already in the DOM (but hidden) from the start. |
+| Dynamic content | `/dynamic_loading` → `/dynamic_loading/1` | Opening "Example 1" from the index page leads to `/dynamic_loading/1`. There, the hidden `Hello World!` element becomes **visible** after clicking Start. It is already in the DOM (but hidden) from the start. |
 | Form inputs | `/checkboxes` | Initial state, `check()`/`uncheck()`, and `click()` toggling in both directions. |
 
 ---
@@ -258,7 +258,9 @@ cache keys stay stable, and the job has a 20-minute timeout.
 **Scenario 2: wait for visible, not for present.**
 - `#finish` is in the DOM from page load with `display:none`. Waiting for the element to *exist*
   passes immediately and then the text check fails, which is the classic CI trap on this page.
-- The test asserts `toBeHidden()` first, clicks Start, checks the loading indicator appears (this
+- The test opens the example the way a user would: from the `/dynamic_loading` index, it clicks the
+  "Example 1: Element on page that is hidden" link and asserts the URL is `/dynamic_loading/1`.
+- It then asserts `toBeHidden()`, clicks Start, checks the loading indicator appears (this
   proves the click handler ran), then waits for `toBeVisible()` and checks the exact text.
 - The reveal comes from a fixed client-side `setTimeout(…, 5000)`, measured at 5.4s from click to
   visible. That's longer than the 5s default assertion timeout, so **that one assertion** gets 10s.
