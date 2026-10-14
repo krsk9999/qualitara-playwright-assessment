@@ -11,12 +11,14 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 3 : 0,
+  // The demo host intermittently stalls requests for ~30s before answering (often with a 503).
+  // Budgets are sized above that stall so one slow asset doesn't fail the whole attempt.
   timeout: 300_000,
   expect: {
     timeout: 60_000,
   },
   // Challenge requirement: never run more than 3 workers in CI.
-  workers: isCI ? 4 : undefined,
+  workers: isCI ? 3 : undefined,
   reporter: isCI
     ? [['github'], ['html', { open: 'never' }], ['list']]
     : [['html', { open: 'never' }], ['list']],
@@ -25,7 +27,6 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
-    headless: false,
     actionTimeout: 10_000,
     navigationTimeout: 60_000,
   },

@@ -117,17 +117,27 @@ Error: Missing environment variable LOGIN_USERNAME. Copy .env.example to .env an
 | `testDir` | `./tests` | Specs live in one place |
 | `fullyParallel` | `true` | Every test is independent, so tests within a file run in parallel too |
 | `workers` | `3` in CI, Playwright default locally | Challenge limit: no more than 3 parallel workers in CI |
-| `retries` | `2` in CI, `0` locally | Local failures show up immediately. CI absorbs transient host failures and records them as *flaky* |
+| `retries` | `3` in CI, `0` locally | Local failures show up immediately. CI absorbs transient host failures and records them as *flaky* |
 | `forbidOnly` | `true` in CI | A forgotten `test.only` can't silently shrink the CI run |
 | `reporter` | `github` + `html` + `list` in CI, `html` + `list` locally | Inline annotations on PRs, plus a full HTML report |
 | `use.baseURL` | `BASE_URL` or the public demo | Specs navigate with relative paths (`/login`) |
 | `use.screenshot` | `only-on-failure` | **Required:** automatic screenshot when a test fails |
 | `use.trace` | `retain-on-failure` | A full trace (DOM snapshots, network, console) is kept for failed tests |
-| `use.video` | `off` | Traces already cover debugging, and videos would make artifacts much bigger |
+| `use.video` | `retain-on-failure` | A recording of every failed test, next to its screenshot and trace |
 | Projects | `chromium` (Desktop Chrome) | Focused scope. Adding Firefox/WebKit is a one-line change per project |
 
-Default timeouts are kept: 30s per test and 5s per assertion. The only override is on the single
-dynamic-loading assertion. See [Design decisions](#design-decisions-and-trade-offs) for why.
+**Timeouts** are raised on purpose, because the demo host stalls requests for about 30s (see
+[Known issue](#known-issue-demo-host-instability)):
+
+| Setting | Value | Playwright default |
+|---|---|---|
+| `timeout` (per test) | 300s | 30s |
+| `expect.timeout` (per assertion) | 60s | 5s |
+| `use.navigationTimeout` | 60s | none (falls back to the test timeout) |
+| `use.actionTimeout` | 10s | none (falls back to the test timeout) |
+
+The navigation budget sits above the host's 30s stall, so one slow asset doesn't fail an attempt. The
+action budget is kept tight, so a click on an element that never becomes actionable still fails fast.
 
 ### TypeScript (`tsconfig.json`)
 
@@ -221,7 +231,7 @@ challenge asks for, and stacking both caches would be redundant.
 **Artifacts (uploaded only when the job fails, kept 14 days):**
 
 - `playwright-report`: the HTML report
-- `playwright-traces`: the `test-results/` folder with traces and failure screenshots
+- `playwright-traces`: the `test-results/` folder with traces, failure screenshots and videos
 
 **Secrets:** `LOGIN_USERNAME`, `LOGIN_PASSWORD`, `LOGIN_INVALID_USERNAME` and `LOGIN_INVALID_PASSWORD`
 are repository secrets, passed to the test step as environment variables.
@@ -263,8 +273,8 @@ cache keys stay stable, and the job has a 20-minute timeout.
 - It then asserts `toBeHidden()`, clicks Start, checks the loading indicator appears (this
   proves the click handler ran), then waits for `toBeVisible()` and checks the exact text.
 - The reveal comes from a fixed client-side `setTimeout(…, 5000)`, measured at 5.4s from click to
-  visible. That's longer than the 5s default assertion timeout, so **that one assertion** gets 10s.
-  The global timeouts are unchanged, and there is no `waitForTimeout` anywhere in the suite.
+  visible. That's longer than Playwright's 5s default assertion timeout, and the project's 60s
+  assertion budget covers it with a wide margin. There is no `waitForTimeout` anywhere in the suite.
 
 **Flash messages are checked with `toContainText`.** The banner renders as `<message>\n×` (the × is a
 close link). `toContainText` checks the meaningful text literally, without tying the test to the
@@ -287,17 +297,19 @@ The suite's reliability is limited by the target site, not the tests.
 - `the-internet.herokuapp.com` intermittently stalled individual requests for about 30s, then
   answered with HTTP 503. Sometimes it was the HTML document, sometimes jQuery, `app.css` or another
   render-blocking asset.
-- A single stall uses up the whole 30s test timeout.
+- With Playwright's default 30s test timeout, a single stall used up the whole test.
 - In one local stability run (every test 5 times, `--retries=2`), all 66 failed attempts traced back to
   stalled host requests. None were selector or assertion failures, and every test passed when the host
   responded.
 
 **How it is handled:**
-- No client-side workaround (request blocking, HTTP/2 flags, inflated global timeouts) is baked into
-  the suite. Tried experimentally, they only partly helped, and they would hide real problems.
-- In CI, `retries: 2` absorbs occasional stalls and reports them as **flaky** rather than hiding them.
-- If stalls stay frequent, raising the per-test timeout above the host's 30s stall is the next option,
-  so one slow asset doesn't fail a whole attempt.
+- Navigation and assertion budgets are sized above the 30s stall (see
+  [Configuration](#playwright-configuration-playwrightconfigts)), so a slow asset delays a test instead
+  of failing it. The action timeout stays at 10s, so genuinely broken interactions still fail quickly.
+- In CI, `retries: 3` absorbs the remaining stalls and reports them as **flaky** rather than hiding
+  them.
+- No request blocking or browser flags are used. Tried experimentally, they only partly helped and
+  would change what the browser actually loads.
 
 ---
 
@@ -328,7 +340,7 @@ committed. The full conversation logs are in [`ai-sessions/`](ai-sessions/).
 3. **Verify, don't trust.** Each result was re-checked before committing: type-check, test discovery,
    reading every file, and re-running tests. Examples of what verification caught or decided:
    - The agent measured the dynamic-loading delay (5.4s, longer than the 5s default) instead of
-     guessing, which justified the scoped timeout.
+     guessing it.
    - The agent checked current GitHub Action major versions with `gh api` rather than relying on
      memory.
    - When the suite failed locally, the failures were traced to the demo host (503s after about 30s
@@ -338,7 +350,7 @@ committed. The full conversation logs are in [`ai-sessions/`](ai-sessions/).
 4. **Human decisions.** These choices were made by me, not the AI:
    - the light POM over no POM
    - credentials in `.env` and secrets
-   - keeping the config free of host workarounds
+   - handling the host stalls with larger timeouts and retries rather than request blocking
    - repository visibility and naming
 
 **Where AI helped most:** turning the plan into small, verifiable tasks, investigating live-page

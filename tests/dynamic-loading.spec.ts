@@ -1,11 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { DynamicLoadingPage } from '../pages/dynamic-loading.page';
 
-// The page reveals #finish from a client-side setTimeout(…, 5000) started by the Start click.
-// No network request is involved, so the wait is a fixed ~5s (measured 5.38–5.42s from click to
-// visible), which is longer than the 5s default expect timeout. Doubling it gives headroom
-// for a loaded CI runner. This override applies to this one assertion only.
-const FINISH_TIMEOUT_MS = 10_000;
+// The page reveals #finish from a client-side setTimeout(…, 5000) started by the Start click
+// (measured 5.38–5.42s from click to visible). The project-wide expect timeout in
+// playwright.config.ts comfortably covers that, so no per-assertion override is needed.
 
 test.describe('Dynamic loading: hidden element', () => {
   test('reveals "Hello World!" after loading completes', async ({ page }) => {
